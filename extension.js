@@ -7,7 +7,7 @@ import * as path from 'path';
  */
 export function activate(context) {
 	console.log(
-		'¡La extensión "module-migrator" con soporte nativo de dotenv está activa!',
+		'¡La extensión "module-migrator" con detección precisa de extensiones está activa!',
 	);
 
 	const outputChannel = vscode.window.createOutputChannel(
@@ -50,7 +50,7 @@ export function activate(context) {
 					{
 						label: '🚀 Automático Masivo',
 						description:
-							'Migra CommonJS a ESM, sanea dotenv y ajusta importaciones en cadena.',
+							'Migra CommonJS a ESM, sanea dotenv y corrige imports en cadena.',
 					},
 					{
 						label: '🛠️ Manual / Interactivo',
@@ -72,7 +72,7 @@ export function activate(context) {
 
 			const esManual = modoSeleccionado.label.includes('Manual');
 			outputChannel.appendLine(
-				`[INFO] Iniciando migración y saneamiento en: ${targetPath}`,
+				`[INFO] Iniciando migración y saneamiento en cadena en: ${targetPath}`,
 			);
 
 			try {
@@ -88,11 +88,11 @@ export function activate(context) {
 
 				outputChannel.appendLine('========================================');
 				outputChannel.appendLine(
-					'✅ ¡Migración completa, dotenv y saneamiento finalizados!',
+					'✅ ¡Migración completa, extensiones y llaves corregidas!',
 				);
 				outputChannel.appendLine('========================================');
 				vscode.window.showInformationMessage(
-					'¡Migración completa finalizada con éxito! Revisa los logs.',
+					'¡Migración y corrección de imports finalizada con éxito! Revisa los logs.',
 				);
 			} catch (error) {
 				const errorMessage =
@@ -188,11 +188,10 @@ async function recorrerDirectorioRecursivo(
 ) {
 	if (!fs.existsSync(dir)) return;
 
-	// Verificamos si en este directorio existe un archivo .env independiente
 	const rutaEnv = path.join(dir, '.env');
 	if (fs.existsSync(rutaEnv)) {
 		outputChannel.appendLine(
-			`[ENV Detectado] Archivo .env localizado de forma independiente en: ${path.relative(rootDir, rutaEnv)}`,
+			`[ENV Detectado] Archivo .env localizado en: ${path.relative(rootDir, rutaEnv)}`,
 		);
 	}
 
@@ -227,7 +226,7 @@ async function recorrerDirectorioRecursivo(
 }
 
 /**
- * Procesa un archivo individual: migra CommonJS a ESM, sanea dotenv y ajusta dependencias en cadena
+ * Procesa un archivo individual: migra CommonJS, sanea dotenv y corrige llaves y extensiones reales (.js, .jsx, .ts, .tsx)
  * @param {string} filePath
  * @param {string} rootDir
  * @param {boolean} esManual
@@ -252,7 +251,7 @@ async function procesarYSanearArchivo(
 	let archivoModificado = false;
 
 	outputChannel.appendLine(
-		`\n--- Migrando y analizando: ${relativoAlRoot} ---`,
+		`\n--- Analizando y saneando: ${relativoAlRoot} ---`,
 	);
 
 	if (esManual) {
@@ -260,7 +259,7 @@ async function procesarYSanearArchivo(
 		await vscode.window.showTextDocument(doc, { preview: false });
 
 		const respuesta = await vscode.window.showInformationMessage(
-			`¿Migrar el archivo ${relativoAlRoot}?`,
+			`¿Migrar/sanear el archivo ${relativoAlRoot}?`,
 			'Sí, convertir',
 			'Omitir',
 		);
@@ -273,13 +272,11 @@ async function procesarYSanearArchivo(
 		}
 	}
 
-	// 0. MIGRACIÓN INTELIGENTE DE DOTENV (CommonJS -> ESM)
-	// Detecta formas comunes de require('dotenv').config() y las pasa a la sintaxis ESM limpia
+	// 0. MIGRACIÓN INTELIGENTE DE DOTENV
 	if (
 		/require\(['"]dotenv['"]\)\.config\(\)/.test(contenido) ||
 		/const\s+dotenv\s*=\s*require\(['"]dotenv['"]\)/.test(contenido)
 	) {
-		// Reemplazar la instanciación mixta por el import nativo de ESM
 		contenido = contenido.replace(
 			/const\s+dotenv\s*=\s*require\(['"]dotenv['"]\);\s*dotenv\.config\(\);?/g,
 			"import dotenv from 'dotenv';\ndotenv.config();",
@@ -289,12 +286,10 @@ async function procesarYSanearArchivo(
 			"import dotenv from 'dotenv';\ndotenv.config();",
 		);
 		archivoModificado = true;
-		outputChannel.appendLine(
-			`  [Conversión Dotenv] Sintaxis 'dotenv' migrada a ES Modules estándar.`,
-		);
+		outputChannel.appendLine(`  [Dotenv] Sintaxis migrada a ES Modules.`);
 	}
 
-	// 1. SANEAMIENTO Y CONVERSIÓN DE EXPORTACIONES (CommonJS -> ESM)
+	// 1. SANEAMIENTO Y CONVERSIÓN DE EXPORTACIONES
 	let contenidoLimpioDestino = contenido;
 
 	if (/module\.exports\s*=\s*\{[\s\S]*?\};?/.test(contenidoLimpioDestino)) {
@@ -303,9 +298,6 @@ async function procesarYSanearArchivo(
 			(match, inner) => {
 				const cleanInner = inner.trim();
 				if (!cleanInner.includes(',') && !cleanInner.includes(':')) {
-					outputChannel.appendLine(
-						`  [Conversión Export] 'module.exports = { ${cleanInner} }' convertido a 'export default ${cleanInner}' (Sin llaves)`,
-					);
 					return `export default ${cleanInner};`;
 				}
 				return `export default {${inner}};`;
@@ -321,12 +313,7 @@ async function procesarYSanearArchivo(
 	) {
 		contenidoLimpioDestino = contenidoLimpioDestino.replace(
 			/export\s+default\s*\{[ \t]*([a-zA-Z0-9_$]+)[ \t]*\};?/g,
-			(match, varName) => {
-				outputChannel.appendLine(
-					`  [Limpieza Export] Llaves redundantes eliminadas: export default ${varName}`,
-				);
-				return `export default ${varName};`;
-			},
+			'export default $1;',
 		);
 		archivoModificado = true;
 	}
@@ -337,9 +324,6 @@ async function procesarYSanearArchivo(
 			'export default ',
 		);
 		archivoModificado = true;
-		outputChannel.appendLine(
-			`  [Conversión] 'module.exports' transformado a 'export default'`,
-		);
 	}
 
 	if (/(?:module\.)?exports\.[a-zA-Z0-9_$]+\s*=/.test(contenidoLimpioDestino)) {
@@ -348,9 +332,6 @@ async function procesarYSanearArchivo(
 			'export const $1 = ',
 		);
 		archivoModificado = true;
-		outputChannel.appendLine(
-			`  [Conversión] Exports individuales transformados a 'export const'`,
-		);
 	}
 
 	if (contenidoLimpioDestino !== contenido) {
@@ -358,7 +339,7 @@ async function procesarYSanearArchivo(
 		fs.writeFileSync(filePath, contenido, 'utf8');
 	}
 
-	// 2. FUNCIÓN DE INSPECCIÓN RECURSIVA DE DEPENDENCIAS Y CONVERSIÓN DE REQUIRES
+	// 2. FUNCIÓN DE INSPECCIÓN Y AJUSTE DE DEPENDENCIAS CON EXTENSIÓN REAL
 	/**
 	 * @param {string} quotePath
 	 * @param {string} importedNames
@@ -367,34 +348,47 @@ async function procesarYSanearArchivo(
 		let cleanPath = quotePath.slice(1, -1);
 
 		if (!cleanPath.startsWith('.') && !cleanPath.startsWith('..')) {
-			outputChannel.appendLine(`  [Librería Externa] ${cleanPath}`);
 			return `import ${importedNames} from '${cleanPath}';`;
 		}
 
 		let targetAbsolute = null;
 		const possibleExtensions = ['.js', '.jsx', '.ts', '.tsx'];
 
-		for (const ext of possibleExtensions) {
-			const absoluteTarget = path.resolve(currentDir, cleanPath + ext);
+		// Verificamos si ya trae una extensión válida en la ruta
+		const hasValidExtension = possibleExtensions.some((ext) =>
+			cleanPath.endsWith(ext),
+		);
+
+		if (hasValidExtension) {
+			const absoluteTarget = path.resolve(currentDir, cleanPath);
 			if (fs.existsSync(absoluteTarget)) {
-				cleanPath += ext;
 				targetAbsolute = absoluteTarget;
-				break;
+			}
+		} else {
+			// Si no trae extensión, buscamos cuál de las extensiones permitidas existe físicamente en el disco
+			for (const ext of possibleExtensions) {
+				const absoluteTarget = path.resolve(currentDir, cleanPath + ext);
+				if (fs.existsSync(absoluteTarget)) {
+					cleanPath += ext; // Añade la extensión real (ej. .jsx, .ts, etc.)
+					targetAbsolute = absoluteTarget;
+					break;
+				}
 			}
 		}
 
 		if (!targetAbsolute || !fs.existsSync(targetAbsolute)) {
 			outputChannel.appendLine(
-				`  [⚠️ ADVERTENCIA] No se encontró el archivo: ${quotePath} en ${relativoAlRoot}`,
+				`  [⚠️ ADVERTENCIA] No se encontró el archivo: ${quotePath}`,
 			);
-			if (!/\.(js|jsx|ts|tsx|json)$/.test(cleanPath)) cleanPath += '.js';
+			if (!/\.(js|jsx|ts|tsx|json)$/.test(cleanPath)) cleanPath += '.js'; // Fallback por defecto si no existe
 			return `import ${importedNames} from '${cleanPath}';`;
 		}
 
 		outputChannel.appendLine(
-			`  [Inspección en Cadena] Verificando dependencia: ${cleanPath}`,
+			`  [Inspección] Verificando destino: ${cleanPath}`,
 		);
 
+		// Saneamiento recursivo del archivo destino
 		sanearArchivoDirecto(targetAbsolute, outputChannel, cacheProcesados);
 
 		const codigoDestinoLimpio = fs.readFileSync(targetAbsolute, 'utf8');
@@ -406,22 +400,24 @@ async function procesarYSanearArchivo(
 
 		let cleanNames = importedNames.trim();
 
+		// CASO A: Destino es export default puro -> QUITAR LLAVES
 		if (esExportDefaultPuro && !tieneExportsNombrados) {
 			if (cleanNames.startsWith('{') && cleanNames.endsWith('}')) {
 				cleanNames = cleanNames.slice(1, -1).trim();
 				outputChannel.appendLine(
-					`  [Corrección en Cadena] Llaves removidas en importación de '${cleanNames}' (Destino es export default)`,
+					`  [Corrección] Llaves removidas en importación de '${cleanNames}' (Destino es export default)`,
 				);
 			}
 			archivoModificado = true;
 			return `import ${cleanNames} from '${cleanPath}';`;
 		}
 
+		// CASO B: Destino tiene exports nombrados -> PONER LLAVES
 		if (tieneExportsNombrados && !esExportDefaultPuro) {
 			if (!cleanNames.startsWith('{')) {
 				cleanNames = `{ ${cleanNames} }`;
 				outputChannel.appendLine(
-					`  [Corrección en Cadena] Llaves agregadas en importación de '${cleanNames}' (Destino usa exports nombrados)`,
+					`  [Corrección] Llaves agregadas en importación de '${cleanNames}' (Destino usa exports nombrados)`,
 				);
 			}
 			archivoModificado = true;
@@ -432,30 +428,42 @@ async function procesarYSanearArchivo(
 		return `import ${importedNames} from '${cleanPath}';`;
 	};
 
-	// 3. CONVERSIÓN DE REQUIRES (Soporta multilínea con saltos de línea y punto y coma)
+	// 3. CONVERSIÓN Y CORRECCIÓN DE REQUIRES Y IMPORTS EXISTENTES
+
+	// A. Requires desestructurados
 	let nuevoContenido = contenido.replace(
 		/const\s+(\{[\s\S]*?\})\s*=\s*require\((['"](\.|\.\.).*?['])\);?/g,
 		(match, names, quotePath) =>
 			resolverInspeccionarYAjustarImport(quotePath, names),
 	);
 
+	// B. Requires estándar
 	nuevoContenido = nuevoContenido.replace(
 		/const\s+([a-zA-Z0-9_$]+)\s*=\s*require\((['"](\.|\.\.).*?['])\);?/g,
 		(match, varName, quotePath) =>
 			resolverInspeccionarYAjustarImport(quotePath, varName),
 	);
 
+	// C. Imports ya existentes (actualiza extensión real y llaves)
+	nuevoContenido = nuevoContenido.replace(
+		/import\s+([\s\S]*?)\s+from\s+(['"](\.|\.\.).*?[']);?/g,
+		(match, importedNames, quotePath) =>
+			resolverInspeccionarYAjustarImport(quotePath, importedNames),
+	);
+
 	// 4. GUARDAR CAMBIOS
 	if (archivoModificado || nuevoContenido !== contenido) {
 		fs.writeFileSync(filePath, nuevoContenido, 'utf8');
-		outputChannel.appendLine(`  ✔ Archivo migrado y actualizado con éxito.`);
+		outputChannel.appendLine(
+			`  ✔ Archivo actualizado con su extensión real y llaves correctas.`,
+		);
 	} else {
 		outputChannel.appendLine(`  - Sin cambios necesarios.`);
 	}
 }
 
 /**
- * Función auxiliar para sanear un archivo destino de forma directa y registrarlo en caché
+ * Función auxiliar para sanear un archivo destino y registrarlo en caché
  * @param {string} filePath
  * @param {vscode.OutputChannel} outputChannel
  * @param {Set<string>} cacheProcesados
@@ -498,7 +506,7 @@ async function sanearArchivoDirecto(filePath, outputChannel, cacheProcesados) {
 		fs.writeFileSync(filePath, contenido, 'utf8');
 		cacheProcesados.add(filePath);
 		outputChannel.appendLine(
-			`  [Saneamiento Recursivo] Archivo dependiente actualizado: ${path.basename(filePath)}`,
+			`  [Saneamiento Recursivo] Dependencia actualizada: ${path.basename(filePath)}`,
 		);
 	}
 }
